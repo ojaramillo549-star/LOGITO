@@ -24,8 +24,10 @@ h1{margin:0 0 4px;font-size:1.7rem;font-weight:600}
 .row .btn{margin-top:0}
 .temps{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px}
 .temp{border:1px solid var(--line);border-radius:6px;padding:14px}
+.temp.full{grid-column: 1 / -1; text-align: center; background-color: #f4f7f9;}
 .temp small{color:var(--mute);font-size:1rem}
 .temp b{display:block;font-size:3rem;font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums}
+.temp.full b{font-size:3.5rem; color: var(--navy);}
 .temp b span{font-size:1.2rem;color:var(--mute);font-weight:400}
 .pilot{display:flex;align-items:center;gap:16px;margin:0 0 20px}
 .lamp{flex:none;width:44px;height:44px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#e6ebee,#b8c2c9 60%,#8d9aa3);border:2px solid #7f8c95;transition:box-shadow .2s,background .2s}
@@ -52,6 +54,8 @@ h1{margin:0 0 4px;font-size:1.7rem;font-weight:600}
     <div class="temps">
       <div class="temp"><small>Sensor 1</small><b><span id="a_t1">--</span><span> °C</span></b></div>
       <div class="temp"><small>Sensor 2</small><b><span id="a_t2">--</span><span> °C</span></b></div>
+      <!-- Nuevo bloque para el Promedio -->
+      <div class="temp full"><small>Temperatura Promedio</small><b><span id="a_promedio">--</span><span> °C</span></b></div>
     </div>
     <div class="pilot">
       <div class="lamp" id="lampAuto"></div>
@@ -122,8 +126,21 @@ document.querySelectorAll("[data-volver]").forEach(b => b.onclick = () => mostra
 onValue(ref(db, "estado"), snap => {
   const e = snap.val() || {};
   const fmt = v => (typeof v === "number") ? v.toFixed(1) : "--";
+  
   $("a_t1").textContent = fmt(e.t1);
   $("a_t2").textContent = fmt(e.t2);
+  
+  // Lógica para calcular y mostrar el promedio en la web
+  let promedio = null;
+  if (typeof e.t1 === "number" && typeof e.t2 === "number") {
+    promedio = (e.t1 + e.t2) / 2.0;
+  } else if (typeof e.t1 === "number") {
+    promedio = e.t1;
+  } else if (typeof e.t2 === "number") {
+    promedio = e.t2;
+  }
+  $("a_promedio").textContent = fmt(promedio);
+
   const encendido = e.rele === true;
   const texto = encendido ? "Relé encendido" : "Relé apagado";
   ["lampAuto", "lampManual"].forEach(id => $(id).classList.toggle("on", encendido));
