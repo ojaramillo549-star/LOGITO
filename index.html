@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Control de temperatura ESP32</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#e8edf0;--panel:#fff;--ink:#14212b;--mute:#5b6b77;--line:#c9d3da;--navy:#1b3a57;--on:#1f8a4c;--off:#c23b2e;--lamp:#f2a100}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;background:var(--bg);color:var(--ink);font-family:'Barlow Semi Condensed',system-ui,sans-serif}
+main{width:100%;max-width:460px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:28px 24px}
+h1{margin:0 0 4px;font-size:1.7rem;font-weight:600}
+.sub{margin:0 0 24px;color:var(--mute)}
+.btn{display:block;width:100%;margin-top:12px;padding:16px;border:0;border-radius:6px;color:#fff;background:var(--navy);font-family:inherit;font-size:1.25rem;font-weight:600;cursor:pointer}
+.btn:focus-visible{outline:3px solid var(--lamp);outline-offset:2px}
+.btn:active{transform:translateY(1px)}
+.btn.on{background:var(--on)}
+.btn.off{background:var(--off)}
+.btn.link{background:none;color:var(--mute);font-size:1rem;font-weight:400;text-decoration:underline;margin-top:20px}
+.row{display:flex;gap:12px}
+.row .btn{margin-top:0}
+.temps{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px}
+.temp{border:1px solid var(--line);border-radius:6px;padding:14px}
+.temp small{color:var(--mute);font-size:1rem}
+.temp b{display:block;font-size:3rem;font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums}
+.temp b span{font-size:1.2rem;color:var(--mute);font-weight:400}
+.pilot{display:flex;align-items:center;gap:16px;margin:0 0 20px}
+.lamp{flex:none;width:44px;height:44px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#e6ebee,#b8c2c9 60%,#8d9aa3);border:2px solid #7f8c95;transition:box-shadow .2s,background .2s}
+.lamp.on{background:radial-gradient(circle at 35% 30%,#ffe29a,var(--lamp) 55%,#b97800);box-shadow:0 0 22px 6px rgba(242,160,0,.55)}
+.pilot strong{display:block;font-size:1.2rem}
+.pilot span{color:var(--mute)}
+#aviso{margin:16px 0 0;color:var(--off);min-height:1.2em}
+</style>
+</head>
+<body>
+<main>
+  <!-- Pantalla 1: elegir modo -->
+  <section id="home">
+    <h1>Control de temperatura</h1>
+    <p class="sub">Elige cómo quieres controlar el relé.</p>
+    <button class="btn" id="elegirManual">Manual</button>
+    <button class="btn" id="elegirAuto">Automático</button>
+  </section>
+
+  <!-- Pantalla 2: automático -->
+  <section id="auto" hidden>
+    <h1>Modo automático</h1>
+    <p class="sub">El relé se enciende cuando la temperatura pasa de 25 °C.</p>
+    <div class="temps">
+      <div class="temp"><small>Sensor 1</small><b><span id="a_t1">--</span><span> °C</span></b></div>
+      <div class="temp"><small>Sensor 2</small><b><span id="a_t2">--</span><span> °C</span></b></div>
+    </div>
+    <div class="pilot">
+      <div class="lamp" id="lampAuto"></div>
+      <div><strong id="txtAuto">Relé apagado</strong><span>Piloto de temperatura alta</span></div>
+    </div>
+    <button class="btn link" data-volver>Cambiar modo</button>
+  </section>
+
+  <!-- Pantalla 3: manual -->
+  <section id="manual" hidden>
+    <h1>Modo manual</h1>
+    <p class="sub">Enciende o apaga el relé con los botones.</p>
+    <div class="pilot">
+      <div class="lamp" id="lampManual"></div>
+      <div><strong id="txtManual">Relé apagado</strong><span>Estado real del relé</span></div>
+    </div>
+    <div class="row">
+      <button class="btn on" id="btnOn">ON</button>
+      <button class="btn off" id="btnOff">OFF</button>
+    </div>
+    <button class="btn link" data-volver>Cambiar modo</button>
+  </section>
+
+  <p id="aviso" role="alert"></p>
+</main>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+// ====== PEGA AQUÍ LA CONFIGURACIÓN DE TU PROYECTO FIREBASE ======
+const firebaseConfig = {
+  apiKey: "AIzaSyBlAQZx-aqngOk3lU-lvgnPF3L1N_3yx78",
+  databaseURL: "https://dalaslogo-default-rtdb.firebaseio.com",
+  projectId: "TU-PROYECTO"
+};
+// ================================================================
+
+const db = getDatabase(initializeApp(firebaseConfig));
+const $ = id => document.getElementById(id);
+const aviso = msg => $("aviso").textContent = msg;
+const fallo = () => aviso("No se pudo comunicar con Firebase. Revisa la configuración y las reglas de la base de datos.");
+
+function mostrar(pantalla) {
+  ["home", "auto", "manual"].forEach(p => $(p).hidden = (p !== pantalla));
+  aviso("");
+}
+
+async function elegir(modo) {
+  mostrar(modo);
+  try {
+    if (modo === "manual") await set(ref(db, "control/manual"), false); // entra con el relé apagado
+    await set(ref(db, "control/modo"), modo);
+  } catch (e) { fallo(); }
+}
+
+async function ordenManual(valor) {
+  try { await set(ref(db, "control/manual"), valor); } catch (e) { fallo(); }
+}
+
+$("elegirManual").onclick = () => elegir("manual");
+$("elegirAuto").onclick = () => elegir("auto");
+$("btnOn").onclick = () => ordenManual(true);
+$("btnOff").onclick = () => ordenManual(false);
+document.querySelectorAll("[data-volver]").forEach(b => b.onclick = () => mostrar("home"));
+
+// Estado que publica el ESP32 (temperaturas y relé)
+onValue(ref(db, "estado"), snap => {
+  const e = snap.val() || {};
+  const fmt = v => (typeof v === "number") ? v.toFixed(1) : "--";
+  $("a_t1").textContent = fmt(e.t1);
+  $("a_t2").textContent = fmt(e.t2);
+  const encendido = e.rele === true;
+  const texto = encendido ? "Relé encendido" : "Relé apagado";
+  ["lampAuto", "lampManual"].forEach(id => $(id).classList.toggle("on", encendido));
+  $("txtAuto").textContent = texto;
+  $("txtManual").textContent = texto;
+}, fallo);
+</script>
+</body>
+</html>
